@@ -1,67 +1,63 @@
 #!/bin/bash
 
-# Fetching the HTML page with curl and extracting the relevant line with grep
-durl=$(curl -s $(curl -s https://piston-meta.mojang.com/mc/game/version_manifest.json | jq -r '.latest.release as $latest | .versions[] | select(.id == $latest) | .url') | jq -r '.downloads.server.url')
+# === CONFIG ===
+DISCORD_WEBHOOK_URL="https://discordapp.com/api/webhooks/#########" # replace this with your webhook
 
-# Extracting the Minecraft version from the line
-minever=$(curl -s https://piston-meta.mojang.com/mc/game/version_manifest.json | jq -r '"minecraft_server.\(.latest.release).jar"')
+# === REQUIREMENTS CHECK ===
+for cmd in jq wget curl java tmux; do
+    if ! command -v $cmd &>/dev/null; then
+        echo "Error: Required command '$cmd' is not installed or not in PATH."
+        exit 1
+    fi
+done
 
-# Extracting the URL from the line
-#mineurl=$(echo "$durl" | awk -F'"' '{print $2}')
+# === FETCH VERSION INFO ===
+manifest=$(curl -s https://piston-meta.mojang.com/mc/game/version_manifest.json)
+latest_ver=$(echo "$manifest" | jq -r '.latest.release')
+version_url=$(echo "$manifest" | jq -r --arg ver "$latest_ver" '.versions[] | select(.id == $ver) | .url')
+durl=$(curl -s "$version_url" | jq -r '.downloads.server.url')
+minever="minecraft_server.${latest_ver}.jar"
 
-# Check if a local version exists
-local_file=$(ls minecraft_server*.jar 2>/dev/null)
-
-start_minecraft() {
-    echo "Starting Minecraft server..."
-    # Adjust this command to match your server's start command
-    tmux new-session -d -s minecraft "java -Xmx7G -Xms1G -jar server.jar nogui"
-}
-
+local_ver=$(ls minecraft_server*.jar 2>/dev/null | grep -oP 'minecraft_server\.\K[0-9]+\.[0-9]+(\.[0-9]+)?')
 updated=false
 
-if [ -n "$local_file" ]; then
-    # Compare versions
-    if [ "$minever" == "$local_file" ]; then
-        echo "Local version ($local_file) is up to date."
-    else
-        echo "Updating to new version ($minever)..."
-	rm *.jar
-        wget "$durl" -O "$minever"
-	cp "$minever" server.jar
-	updated=true
-    fi
+# === FUNCTIONS ===
+start_minecraft() {
+    echo "Starting Minecraft server..."
+    tmux new-session -d -s minecraft "java -Xmx7G -Xms1G -jar server.jar nogui | tee -a server.log"
+}
+
+send_discord_notification() {
+    message="$1"
+    curl -H "Content-Type: application/json" \
+         -X POST \
+         -d "{\"content\": \"$message\"}" \
+         "$DISCORD_WEBHOOK_URL"
+}
+
+# === VERSION CHECK AND UPDATE ===
+if [ "$local_ver" == "$latest_ver" ]; then
+    echo "Local version ($local_ver) is up to date."
 else
-    # Download if no local version exists
-    echo "No local version found. Downloading $minever..."
-    rm *.jar
+    echo "Updating to new version ($minever)..."
+    rm -f minecraft_server*.jar server.jar
     wget "$durl" -O "$minever"
     cp "$minever" server.jar
-    #kill and rerun minecraft
     updated=true
+    send_discord_notification ":pick: **Minecraft server updated** to version **$latest_ver**!"
 fi
 
-# Check if the Minecraft tmux session is running
-if tmux has-session -t minecraft 2>/dev/null; then
-    echo "Minecraft server is running in a tmux session."
-    
-    # If an update occurred, kill the tmux session and restart
+# === SERVER PROCESS MANAGEMENT ===
+if tmux list-sessions 2>/dev/null | grep -q "^minecraft:"; then
+    echo "Minecraft server is running."
     if [ "$updated" = true ]; then
-        echo "Stopping Minecraft server tmux session to apply the update..."
+        echo "Restarting server to apply update..."
         tmux kill-session -t minecraft
-        
-        # Start the updated Minecraft server in a new tmux session
         start_minecraft
-    else
-        echo "No update detected; Minecraft server is already running in tmux."
+        send_discord_notification ":repeat: **Minecraft server restarted** after update to version **$latest_ver**."
     fi
 else
-    # Start the server in a new tmux session if it's not running and an update was applied
-    if [ "$updated" = true ]; then
-        echo "Minecraft server is not running, update was needed. Starting..."
-	start_minecraft
-    else
-        echo "Minecraft server is not running, no update was needed. Starting..."
-        start_minecraft
-    fi
+    echo "Minecraft server is not running. Starting..."
+    start_minecraft
+    send_discord_notification ":white_check_mark: **Minecraft server started**. Running version **$latest_ver**."
 fi
