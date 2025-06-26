@@ -12,6 +12,9 @@ A script to be run as a cronjob to keep your vanilla minecraft server up to date
 * clone the repo or download the bash file
 * delete the old server.jar file
 * run the script
+* add the cron job to restart minecraft at reboot and update every 12 hours (you can change this to meet your needs)
+  * @reboot cd /your/path/MinecraftServerUpdater && ./update.sh
+  * 0 */12 * * * cd /your/path/MinecraftServeUpdater && ./update.sh
 
 ## usage
 * once ran the script creates a tmux session named "minecraft"
