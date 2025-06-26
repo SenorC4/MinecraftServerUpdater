@@ -18,10 +18,12 @@ A script to be run as a cronjob to keep your vanilla minecraft server up to date
   * `0 */12 * * * cd /your/path/MinecraftServeUpdater && ./update.sh`
 
 ### Ex. install
-`sudo apt install curl wget jq tmux git default-jre
+```
+sudo apt install curl wget jq tmux git default-jre
 git clone https://github.com/SenorC4/MinecraftServerUpdater
 cd MinecraftServerUpdater
-./updater.sh`
+./updater.sh
+```
 
 ## usage
 * once ran the script creates a tmux session named "minecraft"
